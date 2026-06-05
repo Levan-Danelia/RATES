@@ -1,0 +1,13 @@
+# Quarto cache / build artefacts
+.quarto/
+*_files/
+*.quarto_ipynb
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,289 @@
+---
+title: "UK Interest Rates Dashboard"
+subtitle: "Bank of England Base Rate & SONIA Overnight Rate"
+author: "Bank of England Data"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-title: "Contents"
+    theme: cosmo
+    code-fold: true
+    code-tools: true
+    fig-width: 10
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+import io
+import requests
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.io as pio
+from datetime import datetime, timedelta
+
+pio.renderers.default = "plotly_mimetype+notebook_connected"
+
+end_date   = datetime.today()
+start_date = end_date - timedelta(days=365)
+
+HEADERS = {"User-Agent": "Mozilla/5.0"}
+
+def fetch_boe_series(code: str, col_name: str) -> pd.DataFrame:
+    """Fetch a single series from the BoE Statistics CSV API."""
+    url = (
+        "https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp"
+        "?csv.x=yes"
+        f"&Datefrom={start_date.strftime('%d/%b/%Y')}"
+        f"&Dateto={end_date.strftime('%d/%b/%Y')}"
+        f"&SeriesCodes={code}"
+        "&CSVF=TN"
+        "&UsingCodes=Y"
+    )
+    resp = requests.get(url, headers=HEADERS, timeout=20)
+    resp.raise_for_status()
+    df = pd.read_csv(io.StringIO(resp.text))
+    df.columns = ["Date", col_name]
+    df["Date"]     = pd.to_datetime(df["Date"], format="mixed", dayfirst=True)
+    df[col_name]   = pd.to_numeric(df[col_name], errors="coerce")
+    df = df.dropna().sort_values("Date").reset_index(drop=True)
+    return df
+
+df_base  = fetch_boe_series("IUDBEDR", "Base Rate")
+df_sonia = fetch_boe_series("IUDSOIA", "SONIA Rate")
+```
+
+## About This Dashboard
+
+This dashboard tracks two key sterling interest rates published daily by the
+[Bank of England](https://www.bankofengland.co.uk/statistics):
+
+| Series | Code | Description |
+|--------|------|-------------|
+| **Base Rate** | IUDBEDR | Official Bank Rate set by the Monetary Policy Committee |
+| **SONIA** | IUDSOIA | Sterling Overnight Index Average — the unsecured overnight lending rate |
+
+Data covers the **last 12 months** and is retrieved directly from the
+[BoE Statistics API](https://www.bankofengland.co.uk/boeapps/database/).
+
+---
+
+## Chart 1 · Bank of England Official Base Rate
+
+```{python}
+#| label: fig-base-rate
+#| fig-cap: "Bank of England Official Bank Rate (daily) — last 12 months"
+
+latest_base = df_base["Base Rate"].iloc[-1]
+latest_base_date = df_base["Date"].iloc[-1].strftime("%d %b %Y")
+
+fig_base = go.Figure()
+
+fig_base.add_trace(go.Scatter(
+    x=df_base["Date"],
+    y=df_base["Base Rate"],
+    mode="lines",
+    line=dict(color="#C8102E", width=3, shape="hv"),   # step-chart for discrete MPC changes
+    fill="tozeroy",
+    fillcolor="rgba(200,16,46,0.08)",
+    name="Base Rate",
+    hovertemplate="<b>%{x|%d %b %Y}</b><br>Base Rate: <b>%{y:.2f}%</b><extra></extra>"
+))
+
+# Annotate the latest value
+fig_base.add_annotation(
+    x=df_base["Date"].iloc[-1],
+    y=latest_base,
+    text=f"<b>Current: {latest_base:.2f}%</b><br><sub>{latest_base_date}</sub>",
+    showarrow=True,
+    arrowhead=2,
+    arrowcolor="#C8102E",
+    bgcolor="white",
+    bordercolor="#C8102E",
+    borderwidth=1,
+    font=dict(size=11, color="#C8102E"),
+    xanchor="right",
+    ax=-60,
+    ay=-40
+)
+
+fig_base.update_layout(
+    title=dict(
+        text="<b>Bank of England Official Bank Rate</b>"
+             "<br><sup>Daily policy rate — last 12 months</sup>",
+        font=dict(size=18, family="Arial, sans-serif"),
+        x=0.5,
+        xanchor="center"
+    ),
+    xaxis=dict(
+        title="Date",
+        showgrid=True,
+        gridcolor="#F0F0F0",
+        linecolor="#D3D3D3",
+        tickformat="%b %Y"
+    ),
+    yaxis=dict(
+        title="Interest Rate (%)",
+        showgrid=True,
+        gridcolor="#F0F0F0",
+        linecolor="#D3D3D3",
+        ticksuffix="%",
+        zeroline=True,
+        zerolinecolor="#D3D3D3"
+    ),
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    hovermode="x unified",
+    margin=dict(t=90, b=70, l=70, r=40),
+    legend=dict(orientation="h", y=-0.15),
+    annotations=[
+        dict(
+            text=(
+                'Source: <a href="https://www.bankofengland.co.uk/monetary-policy/the-bank-rate">'
+                'Bank of England Statistics (IUDBEDR)</a>'
+            ),
+            showarrow=False, xref="paper", yref="paper",
+            x=1, y=-0.18, xanchor="right",
+            font=dict(size=10, color="grey")
+        ),
+        # "current value" annotation already added above via add_annotation
+    ]
+)
+
+fig_base.show()
+```
+
+> **Note:** The Base Rate moves in discrete steps decided by the Monetary Policy
+> Committee (MPC), which typically meets eight times a year. The step-chart
+> shape reflects those discrete changes.
+
+---
+
+## Chart 2 · SONIA Overnight Rate
+
+```{python}
+#| label: fig-sonia
+#| fig-cap: "SONIA (Sterling Overnight Index Average) — last 12 months"
+
+latest_sonia = df_sonia["SONIA Rate"].iloc[-1]
+latest_sonia_date = df_sonia["Date"].iloc[-1].strftime("%d %b %Y")
+
+fig_sonia = go.Figure()
+
+fig_sonia.add_trace(go.Scatter(
+    x=df_sonia["Date"],
+    y=df_sonia["SONIA Rate"],
+    mode="lines",
+    line=dict(color="#003087", width=2),   # BoE navy blue
+    fill="tozeroy",
+    fillcolor="rgba(0,48,135,0.07)",
+    name="SONIA",
+    hovertemplate="<b>%{x|%d %b %Y}</b><br>SONIA: <b>%{y:.4f}%</b><extra></extra>"
+))
+
+# Annotate the latest value
+fig_sonia.add_annotation(
+    x=df_sonia["Date"].iloc[-1],
+    y=latest_sonia,
+    text=f"<b>Latest: {latest_sonia:.4f}%</b><br><sub>{latest_sonia_date}</sub>",
+    showarrow=True,
+    arrowhead=2,
+    arrowcolor="#003087",
+    bgcolor="white",
+    bordercolor="#003087",
+    borderwidth=1,
+    font=dict(size=11, color="#003087"),
+    xanchor="right",
+    ax=-60,
+    ay=-40
+)
+
+fig_sonia.update_layout(
+    title=dict(
+        text="<b>SONIA — Sterling Overnight Index Average</b>"
+             "<br><sup>Daily unsecured overnight lending rate — last 12 months</sup>",
+        font=dict(size=18, family="Arial, sans-serif"),
+        x=0.5,
+        xanchor="center"
+    ),
+    xaxis=dict(
+        title="Date",
+        showgrid=True,
+        gridcolor="#F0F0F0",
+        linecolor="#D3D3D3",
+        tickformat="%b %Y"
+    ),
+    yaxis=dict(
+        title="Rate (%)",
+        showgrid=True,
+        gridcolor="#F0F0F0",
+        linecolor="#D3D3D3",
+        ticksuffix="%",
+        zeroline=True,
+        zerolinecolor="#D3D3D3"
+    ),
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    hovermode="x unified",
+    margin=dict(t=90, b=70, l=70, r=40),
+    legend=dict(orientation="h", y=-0.15),
+    annotations=[dict(
+        text=(
+            'Source: <a href="https://www.bankofengland.co.uk/markets/sonia-benchmark">'
+            'Bank of England Statistics (IUDSOIA)</a>'
+        ),
+        showarrow=False, xref="paper", yref="paper",
+        x=1, y=-0.18, xanchor="right",
+        font=dict(size=10, color="grey")
+    )]
+)
+
+fig_sonia.show()
+```
+
+> **Note:** SONIA is a volume-weighted overnight rate administered by the Bank
+> of England. It tracks very closely to the Base Rate but reflects actual
+> market transactions, so it fluctuates daily within a narrow band.
+
+---
+
+## Summary Table
+
+```{python}
+#| label: tbl-summary
+#| tbl-cap: "Latest values for both rate series"
+
+summary = pd.DataFrame({
+    "Series":  ["BoE Base Rate", "SONIA"],
+    "Code":    ["IUDBEDR",       "IUDSOIA"],
+    "Latest Value (%)": [
+        f"{df_base['Base Rate'].iloc[-1]:.4f}",
+        f"{df_sonia['SONIA Rate'].iloc[-1]:.4f}",
+    ],
+    "As of": [
+        df_base["Date"].iloc[-1].strftime("%d %b %Y"),
+        df_sonia["Date"].iloc[-1].strftime("%d %b %Y"),
+    ],
+    "# Obs (12 months)": [len(df_base), len(df_sonia)]
+})
+
+summary.style \
+    .set_properties(**{"text-align": "center"}) \
+    .set_table_styles([
+        {"selector": "th", "props": [("text-align", "center"), ("background-color", "#003087"), ("color", "white")]},
+        {"selector": "td", "props": [("padding", "8px 12px")]}
+    ]) \
+    .hide(axis="index")
+```
+
+---
+
+*Dashboard last rendered: `{python} datetime.today().strftime("%d %b %Y %H:%M")`*
